@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Services\CharacterService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 
 class CharacterController extends Controller
 {
@@ -21,6 +22,9 @@ class CharacterController extends Controller
     public function character(string $region, string $realm, string $characterName)
     {
         $character = $this->characterService->getCharacter($region, $realm, $characterName);
+//        $character = Cache::remember("$characterName-$realm-$region", 10, function () use ($region, $realm, $characterName) {
+//           return $this->characterService->getCharacter($region, $realm, $characterName);
+//        });
 
         return response()->json([
             'character' => $character

@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\CharacterController;
+use App\Http\Controllers\GuildController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -24,10 +25,6 @@ Route::get('/wow', function (\App\Services\CharacterService $characterService) {
     return $characterService->getCharacter("eu", "the maelstrom", "spyroman");
 });
 
-
-Route::get('/wow2', function () {
-    return "hi";
-});
-
 Route::get('/character/{region}/{realm}/{characterName}', [CharacterController::class, 'character']);
+Route::get('/guild/{region}/{realm}/{guild}', [GuildController::class, 'guild']);
 

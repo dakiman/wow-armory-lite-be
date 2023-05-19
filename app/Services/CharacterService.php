@@ -3,16 +3,9 @@
 
 namespace App\Services;
 
-use App\DTO\Character\CharacterBasic;
-use App\DTO\Character\Item;
-use App\DTO\Character\Media;
-use App\DTO\Character\Specialization;
-use App\DTO\Character\Talent;
-use App\Jobs\RetrieveMythicDungeonData;
-use App\Models\Character;
 use App\Services\Blizzard\BlizzardProfileClient;
 use GuzzleHttp\Psr7\Response;
-use Str;
+use Illuminate\Support\Str;
 
 class CharacterService
 {
@@ -29,11 +22,6 @@ class CharacterService
         $characterName = mb_strtolower($characterName);
 
         $responses = $this->profileClient->getCharacterInfo($region, $realmName, $characterName);
-
-//        $data = [];
-//        foreach ($responses as $response) {
-//            $data[] = json_decode($response->getBody());
-//        }
 
         $character = [
             'name' => $characterName,
@@ -72,14 +60,6 @@ class CharacterService
             ];
         }
 
-        if (isset($data->covenant_progress)) {
-            $result['covenant'] = [
-                'id' => $data->covenant_progress->chosen_covenant->id,
-                'name' => $data->covenant_progress->chosen_covenant->name,
-                'renown' => $data->covenant_progress->renown_level,
-            ];
-        }
-
         return $result;
     }
 
@@ -108,38 +88,83 @@ class CharacterService
     {
         $data = json_decode($response->getBody());
 
-        return array_map(fn($equipped) => [
-            'id' => $equipped->item->id,
-            'itemLevel' => $equipped->level->value,
-            'quality' => $equipped->quality->name,
-            'slot' => $equipped->slot->name
-        ], $data->equipped_items);
+        return array_map(function ($equipped) {
+
+            return [
+                'id' => $equipped->item->id,
+                'itemLevel' => $equipped->level->value,
+                'quality' => $equipped->quality->name,
+                'slot' => $equipped->slot->name,
+                'bonus' => $equipped->bonus_list ?? null,
+                'sockets' => $this->mapSockets($equipped),
+                'set' => $this->mapSet($equipped),
+                'enchantments' => $this->mapEnchantments($equipped)
+            ];
+        }, $data->equipped_items);
     }
 
     private function mapSpecializationsResponseData(Response $response)
     {
         $data = json_decode($response->getBody());
+//        dd($data);
 
         $activeSpecName = $data->active_specialization->name;
 
         $activeSpec = collect($data->specializations)
             ->firstWhere('specialization.name', $activeSpecName);
 
-        $talents = [];
-        if (!empty($activeSpec->talents)) {
+        $loadout = collect($activeSpec->loadouts)
+            ->firstWhere('is_active', true);
 
-            $talents = array_map(fn($talent) => new Talent([
-                'id' => $talent->spell_tooltip->spell->id,
-                'row' => $talent->tier_index ?? null,
-                'column' => $talent->column_index ?? null
-            ]), $activeSpec->talents);
+//        echo(json_encode($loadout->selected_class_talents));
+        $classTalents = collect($loadout->selected_class_talents)->map(function ($talent) {
+            return [
+                'id' => $talent->tooltip->talent->id,
+                'spellTooltip' => $talent->tooltip->spell_tooltip->spell->id,
+                'rank' => $talent->rank
+            ];
+        });
 
-        }
+        $specTalents = collect($loadout->selected_spec_talents)->map(function ($talent) {
+            return [
+                'id' => $talent->tooltip->talent->id,
+                'spellTooltip' => $talent->tooltip->spell_tooltip->spell->id,
+                'rank' => $talent->rank,
+            ];
+        });
 
         return [
             'activeSpecialization' => $activeSpecName,
-            'talents' => $talents
+            'activeSpecLoadoutCode' => $loadout->talent_loadout_code,
+            'classTalents' => $classTalents,
+            'specTalents' => $specTalents
         ];
+    }
+
+    private function mapSockets($item)
+    {
+        if (!isset($item->sockets) || !empty($item->sockets))
+            return null;
+
+        return array_map(fn($socket) => $socket->item->id, $item->sockets);
+    }
+
+    private function mapSet($item)
+    {
+        if (!isset($item->set))
+            return null;
+
+        $equippedSetItems = array_filter($item->set->items, fn($set) => isset($set->is_equipped));
+
+        return array_values(array_map(fn($set) => $set->item->id, $equippedSetItems));
+    }
+
+    private function mapEnchantments($item)
+    {
+        if(!isset($item->enchantments))
+            return null;
+
+        return array_map(fn($enchantment) => $enchantment->enchantment_id, $item->enchantments);
     }
 
 }

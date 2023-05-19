@@ -2,10 +2,27 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\GuildService;
 use Illuminate\Http\Request;
 
 class GuildController extends Controller
 {
+    private GuildService $guildService;
+
+    public function __construct(GuildService $guildService)
+    {
+        $this->guildService = $guildService;
+    }
+
+    public function guild(string $region, string $realm, string $guildName)
+    {
+        $guild = $this->guildService->getGuild($region, $realm, $guildName);
+
+        return response()->json([
+            'guild' => $guild
+        ]);
+    }
+
     /**
      * Display a listing of the resource.
      */
