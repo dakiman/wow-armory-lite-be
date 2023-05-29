@@ -84,7 +84,6 @@ class CharacterService
         $data = json_decode($response->getBody());
 
         return array_map(function ($equipped) {
-
             return [
                 'id' => $equipped->item->id,
                 'itemLevel' => $equipped->level->value,

@@ -16,4 +16,10 @@ class ExampleTest extends TestCase
 
         $response->assertStatus(200);
     }
+
+    public function test_mythics(): void {
+        $response = $this->get('/api/mythics/us/frostmourne/equibus');
+
+        $response->assertStatus(200);
+    }
 }

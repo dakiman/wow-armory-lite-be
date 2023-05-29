@@ -5,6 +5,7 @@ namespace App\Services\Blizzard;
 use App\Exceptions\BlizzardServiceException;
 use Exception;
 use GuzzleHttp\Client;
+use GuzzleHttp\Exception\GuzzleException;
 use GuzzleHttp\Promise;
 use GuzzleHttp\Utils;
 
@@ -70,20 +71,26 @@ class BlizzardProfileClient
     *      'best_mythics' => GuzzleHttp\Psr7\Response
     *  ]
     * */
-    public function getBestMythicsInfo(string $region, string $realmName, string $characterName)
+    public function getBestMythicsInfo(string $region, string $realmName, string $characterName, int $season)
     {
         $client = $this->buildClient($region);
 
-        $promises = [
-            'best_mythics' => $client->getAsync("/profile/wow/character/$realmName/$characterName/mythic-keystone-profile/season/5")
-        ];
-
         try {
-            return Promise\unwrap($promises);
+            return $client->get("/profile/wow/character/$realmName/$characterName/mythic-keystone-profile/season/$season");
         } catch (Exception $e) {
             throw new BlizzardServiceException("Couldnt retrieve mythics data $characterName @ $realmName | $region", $e, 404);
         }
     }
+
+//    public function getMythicProfile(string $region, string $realmName, string $characterName) {
+//        $client = $this->buildClient($region);
+//
+//        try {
+//            return $client->get("/profile/wow/character/$realmName/$characterName/mythic-keystone-profile");
+//        } catch (Exception $e) {
+//            throw new BlizzardServiceException("Couldnt retrieve mythic keystone profile $characterName @ $realmName | $region", $e, 404);
+//        }
+//    }
 
     private function buildClient(string $region)
     {

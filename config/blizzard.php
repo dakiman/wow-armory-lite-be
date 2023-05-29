@@ -25,4 +25,6 @@ return [
 
     'min_level_for_character_lookup' => env('MIN_LEVEL_FOR_CHARACTER_LOOKUP', 0),
 
+    'current_mythics_season' => 10
+
 ];
