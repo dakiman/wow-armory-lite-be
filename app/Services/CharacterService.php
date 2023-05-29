@@ -23,7 +23,7 @@ class CharacterService
 
         $responses = $this->profileClient->getCharacterInfo($region, $realmName, $characterName);
 
-        $character = [
+        return [
             'name' => $characterName,
             'realm' => $realmName,
             'region' => $region,
@@ -32,8 +32,6 @@ class CharacterService
             'equipment' => $this->mapEquipmentResponseData($responses['equipment']),
             'specialization' => $this->mapSpecializationsResponseData($responses['specialization']),
         ];
-
-        return $character;
     }
 
 
@@ -62,23 +60,20 @@ class CharacterService
 
         return $result;
     }
-
     private function mapMediaResponseData(Response $response)
     {
         $data = json_decode($response->getBody());
 
-        $pictures = [];
+        $pictures = [
+            'avatar' => $data->avatar_url ?? null,
+            'inset' => $data->bust_url ?? null,
+            'main' => $data->render_url ?? null
+        ];
 
         if (isset($data->assets)) {
             foreach ($data->assets as $asset) {
                 $pictures[$asset->key] = $asset->value;
             }
-        } else {
-            $pictures = [
-                'avatar' => $data->avatar_url,
-                'inset' => $data->bust_url,
-                'main' => $data->render_url
-            ];
         }
 
         return $pictures;
@@ -106,32 +101,32 @@ class CharacterService
     private function mapSpecializationsResponseData(Response $response)
     {
         $data = json_decode($response->getBody());
-//        dd($data);
 
         $activeSpecName = $data->active_specialization->name;
 
-        $activeSpec = collect($data->specializations)
-            ->firstWhere('specialization.name', $activeSpecName);
+        $activeSpec = current(array_filter($data->specializations, function ($specialization) use ($activeSpecName) {
+            return $specialization->specialization->name === $activeSpecName;
+        }));
 
-        $loadout = collect($activeSpec->loadouts)
-            ->firstWhere('is_active', true);
+        $loadout = current(array_filter($activeSpec->loadouts, function ($loadout) {
+            return $loadout->is_active;
+        }));
 
-//        echo(json_encode($loadout->selected_class_talents));
-        $classTalents = collect($loadout->selected_class_talents)->map(function ($talent) {
+        $classTalents = array_map(function ($talent) {
             return [
                 'id' => $talent->tooltip->talent->id,
                 'spellTooltip' => $talent->tooltip->spell_tooltip->spell->id,
                 'rank' => $talent->rank
             ];
-        });
+        }, $loadout->selected_class_talents);
 
-        $specTalents = collect($loadout->selected_spec_talents)->map(function ($talent) {
+        $specTalents = array_map(function ($talent) {
             return [
                 'id' => $talent->tooltip->talent->id,
                 'spellTooltip' => $talent->tooltip->spell_tooltip->spell->id,
                 'rank' => $talent->rank,
             ];
-        });
+        }, $loadout->selected_spec_talents);
 
         return [
             'activeSpecialization' => $activeSpecName,
