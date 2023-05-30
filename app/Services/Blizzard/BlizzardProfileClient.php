@@ -66,14 +66,10 @@ class BlizzardProfileClient
         }
     }
 
-    /*
-    * @return array [
-    *      'best_mythics' => GuzzleHttp\Psr7\Response
-    *  ]
-    * */
-    public function getBestMythicsInfo(string $region, string $realmName, string $characterName, int $season)
+    public function getMythicsInfo(string $region, string $realmName, string $characterName, int $season)
     {
         $client = $this->buildClient($region);
+
 
         try {
             return $client->get("/profile/wow/character/$realmName/$characterName/mythic-keystone-profile/season/$season");
@@ -82,15 +78,16 @@ class BlizzardProfileClient
         }
     }
 
-//    public function getMythicProfile(string $region, string $realmName, string $characterName) {
-//        $client = $this->buildClient($region);
-//
-//        try {
-//            return $client->get("/profile/wow/character/$realmName/$characterName/mythic-keystone-profile");
-//        } catch (Exception $e) {
-//            throw new BlizzardServiceException("Couldnt retrieve mythic keystone profile $characterName @ $realmName | $region", $e, 404);
-//        }
-//    }
+    public function getRaidingInfo(string $region, string $realmName, string $characterName)
+    {
+        $client = $this->buildClient($region);
+
+        try {
+            return $client->get("/profile/wow/character/$realmName/$characterName/encounters/raids");
+        } catch (Exception $e) {
+            throw new BlizzardServiceException("Couldnt retrieve raiding data $characterName @ $realmName | $region", $e, 404);
+        }
+    }
 
     private function buildClient(string $region)
     {

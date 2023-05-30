@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\CharacterService;
-use App\Services\DungeonService;
+use App\Services\ProgressionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 
@@ -11,12 +11,12 @@ class CharacterController extends Controller
 {
 
     private CharacterService $characterService;
-    private DungeonService $dungeonService;
+    private ProgressionService $progressionService;
 
-    public function __construct(CharacterService $characterService, DungeonService $dungeonService)
+    public function __construct(CharacterService $characterService, ProgressionService $dungeonService)
     {
         $this->characterService = $characterService;
-        $this->dungeonService = $dungeonService;
+        $this->progressionService = $dungeonService;
     }
 
     /**
@@ -36,10 +36,10 @@ class CharacterController extends Controller
 
     public function mythics(string $region, string $realm, string $characterName)
     {
-        $mythicData = $this->dungeonService->getCharacterMythicData($region, $realm, $characterName);
+        $progressionData = $this->progressionService->getCharacterProgression($region, $realm, $characterName);
 
-        return response()->json([
-            'mythic_data' => $mythicData
-        ]);
+        return response()->json(
+            $progressionData
+        );
     }
 }

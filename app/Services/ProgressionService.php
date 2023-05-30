@@ -6,7 +6,7 @@ use App\Services\Blizzard\BlizzardProfileClient;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Support\Str;
 
-class DungeonService
+class ProgressionService
 {
     private BlizzardProfileClient $profileClient;
 
@@ -15,19 +15,24 @@ class DungeonService
         $this->profileClient = $profileClient;
     }
 
-    public function getCharacterMythicData(string $region, string $realmName, string $characterName)
+    public function getCharacterProgression(string $region, string $realmName, string $characterName)
     {
         $realmName = Str::slug($realmName);
         $characterName = mb_strtolower($characterName);
 
         $season = config('blizzard.current_mythics_season');
-        $mythicsResponse = $this->profileClient->getBestMythicsInfo($region, $realmName, $characterName, $season);
+        $mythicsResponse = $this->profileClient->getMythicsInfo($region, $realmName, $characterName, $season);
+        $raidingResponse = $this->profileClient->getRaidingInfo($region, $realmName, $characterName);
 
         $mythicsData = json_decode($mythicsResponse->getBody());
+        $raidsData = json_decode($raidingResponse->getBody());
 
         return [
-            'general' => $this->mapCharacterMythicData($mythicsData),
-            'best_runs' => $this->mapCharacterBestRuns($mythicsData)
+            'mythic_dungeons' => [
+                'general' => $this->mapCharacterMythicData($mythicsData),
+                'best_runs' => $this->mapCharacterBestRuns($mythicsData)
+            ],
+            'raids' => $this->mapRaidData($raidsData)
         ];
     }
 
@@ -59,7 +64,7 @@ class DungeonService
      * @param mixed $dungeonRun
      * @return array|array[]
      */
-    function mapAffixes(mixed $dungeonRun): array
+    function mapAffixes(object $dungeonRun): array
     {
         return array_map(function ($affix) {
             return [
@@ -67,5 +72,14 @@ class DungeonService
                 'id' => $affix->id
             ];
         }, $dungeonRun->keystone_affixes);
+    }
+
+    private function mapRaidData(object $raidsData)
+    {
+        $raids = array_filter($raidsData->expansions, function ($expansionRaids) {
+            return $expansionRaids->expansion->name === "Dragonflight";
+        });
+
+        return ([...$raids][0])->instances;
     }
 }
