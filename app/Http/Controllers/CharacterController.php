@@ -36,10 +36,19 @@ class CharacterController extends Controller
 
     public function mythics(string $region, string $realm, string $characterName)
     {
-        $progressionData = $this->progressionService->getCharacterProgression($region, $realm, $characterName);
+        $mythicsData = $this->progressionService->getCharacterMythics($region, $realm, $characterName);
 
         return response()->json(
-            $progressionData
+            $mythicsData
+        );
+    }
+
+    public function raids(string $region, string $realm, string $characterName)
+    {
+        $raidsData = $this->progressionService->getCharacterRaidingInfo($region, $realm, $characterName);
+
+        return response()->json(
+            $raidsData
         );
     }
 }

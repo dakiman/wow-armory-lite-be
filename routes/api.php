@@ -27,5 +27,6 @@ Route::get('/wow', function (\App\Services\CharacterService $characterService) {
 
 Route::get('/character/{region}/{realm}/{characterName}', [CharacterController::class, 'character']);
 Route::get('/character/mythics/{region}/{realm}/{characterName}', [CharacterController::class, 'mythics']);
+Route::get('/character/raids/{region}/{realm}/{characterName}', [CharacterController::class, 'raids']);
 Route::get('/guild/{region}/{realm}/{guild}', [GuildController::class, 'guild']);
 

@@ -15,23 +15,33 @@ class ProgressionService
         $this->profileClient = $profileClient;
     }
 
-    public function getCharacterProgression(string $region, string $realmName, string $characterName)
+    public function getCharacterMythics(string $region, string $realmName, string $characterName)
     {
         $realmName = Str::slug($realmName);
         $characterName = mb_strtolower($characterName);
 
         $season = config('blizzard.current_mythics_season');
         $mythicsResponse = $this->profileClient->getMythicsInfo($region, $realmName, $characterName, $season);
-        $raidingResponse = $this->profileClient->getRaidingInfo($region, $realmName, $characterName);
 
         $mythicsData = json_decode($mythicsResponse->getBody());
-        $raidsData = json_decode($raidingResponse->getBody());
 
         return [
             'mythic_dungeons' => [
                 'general' => $this->mapCharacterMythicData($mythicsData),
                 'best_runs' => $this->mapCharacterBestRuns($mythicsData)
             ],
+        ];
+    }
+
+    public function getCharacterRaidingInfo(string $region, string $realmName, string $characterName)
+    {
+        $realmName = Str::slug($realmName);
+        $characterName = mb_strtolower($characterName);
+
+        $raidingResponse = $this->profileClient->getRaidingInfo($region, $realmName, $characterName);
+        $raidsData = json_decode($raidingResponse->getBody());
+
+        return [
             'raids' => $this->mapRaidData($raidsData)
         ];
     }
@@ -80,6 +90,7 @@ class ProgressionService
             return $expansionRaids->expansion->name === "Dragonflight";
         });
 
+//        TODO revisit
         return ([...$raids][0])->instances;
     }
 }
