@@ -103,6 +103,7 @@ class CharacterService
 
         $activeSpecName = $data->active_specialization->name;
 
+        /*TODO review current($array) vs $array[0]*/
         $activeSpec = current(array_filter($data->specializations, function ($specialization) use ($activeSpecName) {
             return $specialization->specialization->name === $activeSpecName;
         }));
@@ -111,21 +112,8 @@ class CharacterService
             return $loadout->is_active;
         }));
 
-        $classTalents = array_map(function ($talent) {
-            return [
-                'id' => $talent->tooltip->talent->id,
-                'spellTooltip' => $talent->tooltip->spell_tooltip->spell->id,
-                'rank' => $talent->rank
-            ];
-        }, $loadout->selected_class_talents);
-
-        $specTalents = array_map(function ($talent) {
-            return [
-                'id' => $talent->tooltip->talent->id,
-                'spellTooltip' => $talent->tooltip->spell_tooltip->spell->id,
-                'rank' => $talent->rank,
-            ];
-        }, $loadout->selected_spec_talents);
+        $classTalents = $this->mapSpec($loadout->selected_class_talents);
+        $specTalents = $this->mapSpec($loadout->selected_spec_talents);
 
         return [
             'activeSpecialization' => $activeSpecName,
@@ -159,6 +147,21 @@ class CharacterService
             return null;
 
         return array_map(fn($enchantment) => $enchantment->enchantment_id, $item->enchantments);
+    }
+
+    /**
+     * @param mixed $loadout
+     * @return array|array[]
+     */
+    public function mapSpec(mixed $talents): array
+    {
+        return array_map(function ($talent) {
+            return [
+                'id' => $talent->tooltip->talent->id,
+                'spellTooltip' => $talent->tooltip->spell_tooltip->spell->id,
+                'rank' => $talent->rank,
+            ];
+        }, $talents);
     }
 
 }
