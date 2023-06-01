@@ -137,7 +137,7 @@ class CharacterService
 
     private function mapSockets($item)
     {
-        if (!isset($item->sockets) || !empty($item->sockets))
+        if (!isset($item->sockets) || empty($item->sockets))
             return null;
 
         return array_map(fn($socket) => $socket->item->id, $item->sockets);

@@ -22,4 +22,11 @@ class ExampleTest extends TestCase
 
         $response->assertStatus(200);
     }
+
+
+    public function test_character(): void {
+        $response = $this->get('/api/character/us/frostmourne/equibus');
+
+        $response->assertStatus(200);
+    }
 }
