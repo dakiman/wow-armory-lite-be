@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\CharacterService;
+use App\Services\ClassicCharacterService;
 use App\Services\ProgressionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -11,12 +12,14 @@ class CharacterController extends Controller
 {
 
     private CharacterService $characterService;
+    private ClassicCharacterService $classicCharacterService;
     private ProgressionService $progressionService;
 
-    public function __construct(CharacterService $characterService, ProgressionService $dungeonService)
+    public function __construct(CharacterService $characterService, ProgressionService $dungeonService, ClassicCharacterService $classicCharacterService)
     {
         $this->characterService = $characterService;
         $this->progressionService = $dungeonService;
+        $this->classicCharacterService = $classicCharacterService;
     }
 
     /**
@@ -24,10 +27,13 @@ class CharacterController extends Controller
      */
     public function character(string $region, string $realm, string $characterName)
     {
-        $character = $this->characterService->getCharacter($region, $realm, $characterName);
-//        $character = Cache::remember("$characterName-$realm-$region", 10, function () use ($region, $realm, $characterName) {
-//           return $this->characterService->getCharacter($region, $realm, $characterName);
-//        });
+        $isClassic = request()->query('isClassic', false);
+//        $character = $this->characterService->getCharacter($region, $realm, $characterName);
+        $character = Cache::remember("$characterName-$realm-$region-profile-$isClassic", 3600, function () use ($region, $realm, $characterName, $isClassic) {
+            return $isClassic ?
+                $this->classicCharacterService->getCharacter($region, $realm, $characterName) :
+                $this->characterService->getCharacter($region, $realm, $characterName);
+        });
 
         return response()->json([
             'character' => $character
@@ -36,7 +42,11 @@ class CharacterController extends Controller
 
     public function mythics(string $region, string $realm, string $characterName)
     {
-        $mythicsData = $this->progressionService->getCharacterMythics($region, $realm, $characterName);
+//        $mythicsData = $this->progressionService->getCharacterMythics($region, $realm, $characterName);
+
+        $mythicsData = Cache::remember("$characterName-$realm-$region-mythics", 3600, function () use ($region, $realm, $characterName) {
+            return $this->progressionService->getCharacterMythics($region, $realm, $characterName);
+        });
 
         return response()->json(
             $mythicsData
@@ -45,7 +55,11 @@ class CharacterController extends Controller
 
     public function raids(string $region, string $realm, string $characterName)
     {
-        $raidsData = $this->progressionService->getCharacterRaidingInfo($region, $realm, $characterName);
+//        $raidsData = $this->progressionService->getCharacterRaidingInfo($region, $realm, $characterName);
+
+        $raidsData = Cache::remember("$characterName-$realm-$region-raids", 3600, function () use ($region, $realm, $characterName) {
+            return $this->progressionService->getCharacterRaidingInfo($region, $realm, $characterName);
+        });
 
         return response()->json(
             $raidsData

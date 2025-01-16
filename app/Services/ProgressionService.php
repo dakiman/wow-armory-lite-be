@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Exceptions\BlizzardServiceException;
 use App\Services\Blizzard\BlizzardProfileClient;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Support\Str;
@@ -64,7 +65,7 @@ class ProgressionService
                 'duration' => $dungeonRun->duration,
                 'is_completed_within_time' => $dungeonRun->is_completed_within_time,
                 'score' => $dungeonRun->mythic_rating->rating,
-                'dungeon_rating' => $dungeonRun->map_rating->rating,
+//                'dungeon_rating' => $dungeonRun->map_rating->rating,
                 'affixes' => $this->mapAffixes($dungeonRun)
             ];
         }, $data->best_runs);
@@ -90,7 +91,46 @@ class ProgressionService
             return $expansionRaids->expansion->name === "Dragonflight";
         });
 
-//        TODO revisit
-        return ([...$raids][0])->instances;
+        if(empty($raids)){
+            throw new BlizzardServiceException("Couldnt retrieve raiding data", null, 404);
+        }
+
+        $data = ([...$raids][0])->instances;
+
+        return array_map(function ($raidRun) {
+            return [
+                'name' => $raidRun->instance->name,
+                'id' => $raidRun->instance->id,
+                'modes' => $this->mapModes($raidRun->modes)
+            ];
+        }, $data);
+
+    }
+
+    private function mapModes($modes)
+    {
+        return array_map(function ($modeRun) {
+            return [
+                'mode' => $modeRun->difficulty->name,
+                'status' => $modeRun->status->name,
+                'progress' => [
+                    'total' => $modeRun->progress->total_count,
+                    'completed' => $modeRun->progress->completed_count,
+                ],
+                'encounters' => $this->mapEncounters($modeRun->progress->encounters)
+
+            ];
+        }, $modes);
+    }
+
+    private function mapEncounters($encounters)
+    {
+        return array_map(function ($encounter) {
+            return [
+                'name' => $encounter->encounter->name,
+                'completed_count' => $encounter->completed_count,
+                'last_kill' => $encounter->last_kill_timestamp,
+            ];
+        }, $encounters);
     }
 }

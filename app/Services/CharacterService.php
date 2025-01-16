@@ -34,7 +34,6 @@ class CharacterService
         ];
     }
 
-
     private function mapBasicResponseData(Response $response)
     {
         $data = json_decode($response->getBody());
@@ -60,6 +59,7 @@ class CharacterService
 
         return $result;
     }
+
     private function mapMediaResponseData(Response $response)
     {
         $data = json_decode($response->getBody());
@@ -128,7 +128,11 @@ class CharacterService
         if (!isset($item->sockets) || empty($item->sockets))
             return null;
 
-        return array_map(fn($socket) => $socket->item->id, $item->sockets);
+        return array_map(function ($socket) {
+            if (!isset($socket->item))
+                return null;
+            return $socket->item->id;
+        }, $item->sockets);
     }
 
     private function mapSet($item)
@@ -143,7 +147,7 @@ class CharacterService
 
     private function mapEnchantments($item)
     {
-        if(!isset($item->enchantments))
+        if (!isset($item->enchantments))
             return null;
 
         return array_map(fn($enchantment) => $enchantment->enchantment_id, $item->enchantments);
@@ -157,9 +161,9 @@ class CharacterService
     {
         return array_map(function ($talent) {
             return [
-                'id' => $talent->tooltip->talent->id,
-                'spellTooltip' => $talent->tooltip->spell_tooltip->spell->id,
-                'rank' => $talent->rank,
+                'id' => $talent->id,
+                'spellTooltip' => $talent?->tooltip?->spell_tooltip?->spell?->id ?? null,
+                'rank' => $talent?->rank,
             ];
         }, $talents);
     }

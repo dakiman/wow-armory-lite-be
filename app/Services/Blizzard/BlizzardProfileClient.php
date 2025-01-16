@@ -24,9 +24,9 @@ class BlizzardProfileClient
      *      'roster' => GuzzleHttp\Psr7\Response,
      *  ]
      * */
-    public function getGuildInfo(string $region, string $realmName, string $guildName)
+    public function getGuildInfo(string $region, string $realmName, string $guildName, bool $isClassic = false  )
     {
-        $client = $this->buildClient($region);
+        $client = $this->buildClient($region, $isClassic);
 
         $promises = [
             'basic' => $client->getAsync("/data/wow/guild/$realmName/$guildName"),
@@ -47,9 +47,9 @@ class BlizzardProfileClient
     *      'equipment' => GuzzleHttp\Psr7\Response
     *  ]
     * */
-    public function getCharacterInfo(string $region, string $realmName, string $characterName)
+    public function getCharacterInfo(string $region, string $realmName, string $characterName, bool $isClassic = false)
     {
-        $client = $this->buildClient($region);
+        $client = $this->buildClient($region, $isClassic);
 
         $promises = [
             'basic' => $client->getAsync("/profile/wow/character/$realmName/$characterName"),
@@ -89,13 +89,13 @@ class BlizzardProfileClient
         }
     }
 
-    private function buildClient(string $region)
+    private function buildClient(string $region, bool $isClassic = false)
     {
         return new Client([
             'headers' => ['Authorization' => 'Bearer ' . $this->token],
             'base_uri' => getBlizzardApiUrl($region),
             'query' => [
-                'namespace' => 'profile-' . $region,
+                'namespace' => $isClassic ? 'profile-classic1x-' . $region : 'profile-' . $region,
                 'locale' => 'en_GB'
             ]
         ]);

@@ -16,7 +16,7 @@ return [
     ],
 
     'regions' => [
-        'EU', 'US', 'AU', 'CH'
+        'us', 'eu'/*, 'kr', 'tw'*/
     ],
 
     'character_min_seconds_update' => env('CHARACTER_MIN_SECONDS_UPDATE', 0),
