@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Services\Blizzard\BlizzardAuthClient;
 use App\Services\Blizzard\BlizzardProfileClient;
+use App\Services\Blizzard\BlizzardStaticDataClient;
 use App\Services\BlizzardAuthService;
 use Illuminate\Support\ServiceProvider;
 
@@ -23,12 +24,23 @@ class BlizzardServiceProvider extends ServiceProvider
         $this->app->singleton(BlizzardProfileClient::class, function () {
             $token = cache('token');
 
-            if(empty($token)) {
+            if (empty($token)) {
                 $blizzardAuthService = app(BlizzardAuthService::class);
                 $token = $blizzardAuthService->refreshAndCacheAccessToken();
             }
 
             return new BlizzardProfileClient($token);
+        });
+
+        $this->app->singleton(BlizzardStaticDataClient::class, function () {
+            $token = cache('token');
+
+            if (empty($token)) {
+                $blizzardAuthService = app(BlizzardAuthService::class);
+                $token = $blizzardAuthService->refreshAndCacheAccessToken();
+            }
+
+            return new BlizzardStaticDataClient($token);
         });
     }
 

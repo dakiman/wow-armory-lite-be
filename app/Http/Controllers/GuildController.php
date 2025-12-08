@@ -2,47 +2,93 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
+use App\Http\Requests\GetGuildRequest;
+use App\Http\Responses\PendingResponse;
+use App\Services\GuildService;
+use Illuminate\Http\JsonResponse;
 
 class GuildController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
-    public function index()
-    {
-        //
+    public function __construct(
+        private GuildService $guildService
+    ) {
     }
 
     /**
-     * Store a newly created resource in storage.
+     * Get guild information.
      */
-    public function store(Request $request)
+    public function guild(GetGuildRequest $request): JsonResponse|PendingResponse
     {
-        //
+        $region = $request->validated()['region'];
+        $realm = $request->validated()['realm'];
+        $guildName = $request->validated()['guild'];
+
+        $result = $this->guildService->getGuild($region, $realm, $guildName);
+
+        if ($result instanceof PendingResponse) {
+            return $result;
+        }
+
+        return response()->json([
+            'status' => 'complete',
+            'guild' => $result,
+        ]);
     }
 
     /**
-     * Display the specified resource.
+     * Get popular guilds.
      */
-    public function show(string $id)
+    public function popular(): JsonResponse
     {
-        //
+        $data = $this->guildService->getPopular();
+
+        return response()->json($data);
     }
 
     /**
-     * Update the specified resource in storage.
+     * Get guild fetch status for polling.
      */
-    public function update(Request $request, string $id)
+    public function status(int $id): JsonResponse
     {
-        //
+        $guild = $this->guildService->getGuildById($id);
+
+        if (! $guild) {
+            return response()->json([
+                'status' => 'not_found',
+                'message' => 'Guild not found',
+            ], 404);
+        }
+
+        if ($guild->fetch_status === 'complete' && $guild->data !== null) {
+            return response()->json([
+                'status' => 'complete',
+                'guild' => $guild->data,
+            ]);
+        }
+
+        if ($guild->fetch_status === 'failed') {
+            return response()->json([
+                'status' => 'failed',
+                'message' => 'Failed to fetch guild data. Please try again.',
+            ], 500);
+        }
+
+        return response()->json([
+            'status' => $guild->fetch_status,
+            'message' => $this->getStatusMessage($guild->fetch_status),
+        ]);
     }
 
     /**
-     * Remove the specified resource from storage.
+     * Get human-readable status message.
      */
-    public function destroy(string $id)
+    private function getStatusMessage(string $status): string
     {
-        //
+        return match ($status) {
+            'pending' => 'Your request is queued and will be processed shortly.',
+            'fetching' => 'Fetching guild data from Blizzard...',
+            'idle' => 'No fetch in progress.',
+            default => 'Processing...',
+        };
     }
 }

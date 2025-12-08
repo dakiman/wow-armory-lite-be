@@ -1,14 +1,15 @@
 <?php
 
-
 namespace App\Services\Blizzard;
 
 use App\Exceptions\BlizzardServiceException;
+use App\Helpers\BlizzardUrlBuilder;
 use GuzzleHttp\Client;
 
 class BlizzardAuthClient
 {
     private string $clientId;
+
     private string $clientSecret;
 
     public function __construct($clientId, $clientSecret)
@@ -46,7 +47,7 @@ class BlizzardAuthClient
                 'form_params' => [
                     'grant_type' => 'authorization_code',
                     'redirect_uri' => $redirectUri,
-                    'code' => $authCode
+                    'code' => $authCode,
                 ],
             ]);
         } catch (\Exception $e) {
@@ -59,9 +60,8 @@ class BlizzardAuthClient
     private function buildClient(string $region)
     {
         return new Client([
-            'base_uri' => getBlizzardOauthUrl($region),
+            'base_uri' => BlizzardUrlBuilder::oauth($region),
             'auth' => [$this->clientId, $this->clientSecret],
         ]);
     }
-
 }

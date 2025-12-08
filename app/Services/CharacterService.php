@@ -1,145 +1,214 @@
 <?php
 
-
 namespace App\Services;
 
-use App\DTO\Character\CharacterBasic;
-use App\DTO\Character\Item;
-use App\DTO\Character\Media;
-use App\DTO\Character\Specialization;
-use App\DTO\Character\Talent;
-use App\Jobs\RetrieveMythicDungeonData;
+use App\Exceptions\RateLimitException;
+use App\Http\Responses\PendingResponse;
+use App\Jobs\FetchCharacterDataJob;
 use App\Models\Character;
 use App\Services\Blizzard\BlizzardProfileClient;
+use App\Services\Contracts\CharacterServiceInterface;
+use App\Services\Traits\MapsCharacterData;
 use GuzzleHttp\Psr7\Response;
-use Str;
+use Illuminate\Support\Str;
 
-class CharacterService
+class CharacterService implements CharacterServiceInterface
 {
-    private BlizzardProfileClient $profileClient;
+    use MapsCharacterData;
 
-    public function __construct(BlizzardProfileClient $profileClient)
-    {
-        $this->profileClient = $profileClient;
+    public function __construct(
+        private BlizzardProfileClient $profileClient
+    ) {
     }
 
-    public function getCharacter(string $region, string $realmName, string $characterName)
+    /**
+     * Get character profile data.
+     *
+     * Returns character data immediately if available and fresh,
+     * or queues a background job if rate limited.
+     *
+     * @return array<string, mixed>|PendingResponse
+     */
+    public function getCharacter(string $region, string $realmName, string $characterName, bool $isClassic = false): array|PendingResponse
     {
         $realmName = Str::slug($realmName);
         $characterName = mb_strtolower($characterName);
 
-        $responses = $this->profileClient->getCharacterInfo($region, $realmName, $characterName);
+        // Find or create the character record
+        $character = Character::findOrCreateByIdentifiers($region, $realmName, $characterName, $isClassic);
 
-//        $data = [];
-//        foreach ($responses as $response) {
-//            $data[] = json_decode($response->getBody());
-//        }
+        // Track the search
+        $character->recordSearch();
 
-        $character = [
+        // If we have fresh data, return it immediately
+        if ($character->hasFreshData()) {
+            return $character->data;
+        }
+
+        // Try to fetch data synchronously
+        try {
+            $data = $this->fetchAndMapData($region, $realmName, $characterName, $isClassic);
+            $character->markAsComplete($data);
+
+            return $data;
+        } catch (RateLimitException $e) {
+            // Rate limited - queue a background job
+            if (! $character->isFetchInProgress()) {
+                $character->markAsPending();
+                FetchCharacterDataJob::dispatch($character);
+            }
+
+            // If we have stale data, return it with a note
+            if ($character->data !== null) {
+                return $character->data;
+            }
+
+            return new PendingResponse(
+                entity: $character,
+                estimatedWait: $e->getRetryAfter() ?? 30
+            );
+        }
+    }
+
+    /**
+     * Get popular characters.
+     *
+     * @return array{most_searched: array, recently_searched: array}
+     */
+    public function getPopular(): array
+    {
+        $limit = config('blizzard.popular_limit', 5);
+
+        return [
+            'most_searched' => Character::mostSearched($limit)
+                ->get()
+                ->map(fn (Character $c) => $c->getSummary())
+                ->toArray(),
+            'recently_searched' => Character::recentlySearched($limit)
+                ->get()
+                ->map(fn (Character $c) => $c->getSummary())
+                ->toArray(),
+        ];
+    }
+
+    /**
+     * Get character by ID for status polling.
+     */
+    public function getCharacterById(int $id): ?Character
+    {
+        return Character::find($id);
+    }
+
+    /**
+     * Fetch and map character data from Blizzard API.
+     *
+     * @return array<string, mixed>
+     */
+    private function fetchAndMapData(string $region, string $realmName, string $characterName, bool $isClassic): array
+    {
+        $responses = $this->profileClient->getCharacterInfo($region, $realmName, $characterName, $isClassic);
+
+        return [
             'name' => $characterName,
             'realm' => $realmName,
             'region' => $region,
-            'basic' => $this->mapBasicResponseData($responses['basic']),
+            'basic' => $this->mapBasicResponseData($responses['basic'], true),
             'media' => $this->mapMediaResponseData($responses['media']),
             'equipment' => $this->mapEquipmentResponseData($responses['equipment']),
             'specialization' => $this->mapSpecializationsResponseData($responses['specialization']),
         ];
-
-        return $character;
     }
 
-
-    private function mapBasicResponseData(Response $response)
+    /**
+     * Map equipment response data.
+     */
+    private function mapEquipmentResponseData(Response $response): array
     {
         $data = json_decode($response->getBody());
 
-        $result = [
-            'gender' => $data->gender->name,
-            'faction' => $data->faction->name,
-            'race' => $data->race->id,
-            'class' => $data->character_class->id,
-            'level' => $data->level,
-            'achievement_points' => $data->achievement_points,
-            'average_item_level' => $data->average_item_level,
-            'equipped_item_level' => $data->equipped_item_level,
-        ];
-
-        if (isset($data->guild)) {
-            $result['guild'] = [
-                'name' => $data->guild->name,
-                'realm' => $data->guild->realm->name,
-                'faction' => $data->guild->faction->name ?? null
+        return array_map(function ($equipped) {
+            return [
+                'id' => $equipped->item->id,
+                'itemLevel' => $equipped->level->value,
+                'quality' => $equipped->quality->name,
+                'slot' => $equipped->slot->name,
+                'bonus' => $equipped->bonus_list ?? null,
+                'sockets' => $this->mapSockets($equipped),
+                'set' => $this->mapSet($equipped),
+                'enchantments' => $this->mapEnchantments($equipped->enchantments ?? []),
             ];
-        }
-
-        if (isset($data->covenant_progress)) {
-            $result['covenant'] = [
-                'id' => $data->covenant_progress->chosen_covenant->id,
-                'name' => $data->covenant_progress->chosen_covenant->name,
-                'renown' => $data->covenant_progress->renown_level,
-            ];
-        }
-
-        return $result;
+        }, $data->equipped_items);
     }
 
-    private function mapMediaResponseData(Response $response)
-    {
-        $data = json_decode($response->getBody());
-
-        $pictures = [];
-
-        if (isset($data->assets)) {
-            foreach ($data->assets as $asset) {
-                $pictures[$asset->key] = $asset->value;
-            }
-        } else {
-            $pictures = [
-                'avatar' => $data->avatar_url,
-                'inset' => $data->bust_url,
-                'main' => $data->render_url
-            ];
-        }
-
-        return $pictures;
-    }
-
-    private function mapEquipmentResponseData(Response $response)
-    {
-        $data = json_decode($response->getBody());
-
-        return array_map(fn($equipped) => [
-            'id' => $equipped->item->id,
-            'itemLevel' => $equipped->level->value,
-            'quality' => $equipped->quality->name,
-            'slot' => $equipped->slot->name
-        ], $data->equipped_items);
-    }
-
-    private function mapSpecializationsResponseData(Response $response)
+    /**
+     * Map specializations response data.
+     */
+    private function mapSpecializationsResponseData(Response $response): array
     {
         $data = json_decode($response->getBody());
 
         $activeSpecName = $data->active_specialization->name;
 
-        $activeSpec = collect($data->specializations)
-            ->firstWhere('specialization.name', $activeSpecName);
+        $activeSpec = current(array_filter($data->specializations, function ($specialization) use ($activeSpecName) {
+            return $specialization->specialization->name === $activeSpecName;
+        }));
 
-        $talents = [];
-        if (!empty($activeSpec->talents)) {
+        $loadout = current(array_filter($activeSpec->loadouts, function ($loadout) {
+            return $loadout->is_active;
+        }));
 
-            $talents = array_map(fn($talent) => new Talent([
-                'id' => $talent->spell_tooltip->spell->id,
-                'row' => $talent->tier_index ?? null,
-                'column' => $talent->column_index ?? null
-            ]), $activeSpec->talents);
-
-        }
+        $classTalents = $this->mapSpec($loadout->selected_class_talents);
+        $specTalents = $this->mapSpec($loadout->selected_spec_talents);
 
         return [
             'activeSpecialization' => $activeSpecName,
-            'talents' => $talents
+            'activeSpecLoadoutCode' => $loadout->talent_loadout_code,
+            'classTalents' => $classTalents,
+            'specTalents' => $specTalents,
         ];
     }
 
+    /**
+     * Map item sockets.
+     *
+     * @param  object  $item
+     */
+    private function mapSockets($item): ?array
+    {
+        if (! isset($item->sockets) || empty($item->sockets)) {
+            return null;
+        }
+
+        return array_map(function ($socket) {
+            if (! isset($socket->item)) {
+                return null;
+            }
+
+            return $socket->item->id;
+        }, $item->sockets);
+    }
+
+    /**
+     * Map item set bonuses.
+     *
+     * @param  object  $item
+     */
+    private function mapSet($item): ?array
+    {
+        return $this->mapSetItems($item->set ?? null);
+    }
+
+    /**
+     * Map talent specialization data.
+     */
+    public function mapSpec(mixed $talents): array
+    {
+        return array_map(function ($talent) {
+            return [
+                'id' => $talent->id,
+                'spellTooltip' => $talent?->tooltip?->spell_tooltip?->spell?->id ?? null,
+                'rank' => $talent?->rank,
+            ];
+        }, $talents);
+    }
 }
