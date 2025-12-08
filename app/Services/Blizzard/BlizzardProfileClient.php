@@ -3,11 +3,10 @@
 namespace App\Services\Blizzard;
 
 use App\Exceptions\BlizzardServiceException;
+use App\Helpers\BlizzardUrlBuilder;
 use Exception;
 use GuzzleHttp\Client;
-use GuzzleHttp\Exception\GuzzleException;
-use GuzzleHttp\Promise;
-use GuzzleHttp\Utils;
+use GuzzleHttp\Promise\Utils;
 
 class BlizzardProfileClient
 {
@@ -24,7 +23,7 @@ class BlizzardProfileClient
      *      'roster' => GuzzleHttp\Psr7\Response,
      *  ]
      * */
-    public function getGuildInfo(string $region, string $realmName, string $guildName, bool $isClassic = false  )
+    public function getGuildInfo(string $region, string $realmName, string $guildName, bool $isClassic = false)
     {
         $client = $this->buildClient($region, $isClassic);
 
@@ -34,7 +33,7 @@ class BlizzardProfileClient
         ];
 
         try {
-            return Promise\unwrap($promises);
+            return Utils::unwrap($promises);
         } catch (Exception $e) {
             throw new BlizzardServiceException('Couldnt retrieve guild', $e, 404);
         }
@@ -55,12 +54,11 @@ class BlizzardProfileClient
             'basic' => $client->getAsync("/profile/wow/character/$realmName/$characterName"),
             'media' => $client->getAsync("/profile/wow/character/$realmName/$characterName/character-media"),
             'equipment' => $client->getAsync("/profile/wow/character/$realmName/$characterName/equipment"),
-            'specialization' => $client->getAsync("/profile/wow/character/$realmName/$characterName/specializations")
+            'specialization' => $client->getAsync("/profile/wow/character/$realmName/$characterName/specializations"),
         ];
 
-
         try {
-            return Promise\unwrap($promises);
+            return Utils::unwrap($promises);
         } catch (Exception $e) {
             throw new BlizzardServiceException("Couldnt retrieve character $characterName @ $realmName | $region", $e, 404);
         }
@@ -69,7 +67,6 @@ class BlizzardProfileClient
     public function getMythicsInfo(string $region, string $realmName, string $characterName, int $season)
     {
         $client = $this->buildClient($region);
-
 
         try {
             return $client->get("/profile/wow/character/$realmName/$characterName/mythic-keystone-profile/season/$season");
@@ -92,13 +89,12 @@ class BlizzardProfileClient
     private function buildClient(string $region, bool $isClassic = false)
     {
         return new Client([
-            'headers' => ['Authorization' => 'Bearer ' . $this->token],
-            'base_uri' => getBlizzardApiUrl($region),
+            'headers' => ['Authorization' => 'Bearer '.$this->token],
+            'base_uri' => BlizzardUrlBuilder::api($region),
             'query' => [
-                'namespace' => $isClassic ? 'profile-classic1x-' . $region : 'profile-' . $region,
-                'locale' => 'en_GB'
-            ]
+                'namespace' => $isClassic ? 'profile-classic1x-'.$region : 'profile-'.$region,
+                'locale' => 'en_GB',
+            ],
         ]);
     }
-
 }

@@ -13,6 +13,11 @@ class StaticDataController extends Controller
         $this->staticBlizzardDataService = $staticBlizzardDataService;
     }
 
+    /**
+     * Get all realms across all regions.
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
     public function realms()
     {
         return response()->json(

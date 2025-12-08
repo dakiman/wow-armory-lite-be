@@ -1,14 +1,18 @@
 <?php
 
-
 namespace App\Services;
 
+use App\Constants\CacheKeys;
 use App\Services\Blizzard\BlizzardProfileClient;
+use App\Services\Traits\MapsCharacterData;
 use GuzzleHttp\Psr7\Response;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 class ClassicCharacterService
 {
+    use MapsCharacterData;
+
     private BlizzardProfileClient $profileClient;
 
     public function __construct(BlizzardProfileClient $profileClient)
@@ -16,22 +20,35 @@ class ClassicCharacterService
         $this->profileClient = $profileClient;
     }
 
-    public function getCharacter(string $region, string $realmName, string $characterName)
+    /**
+     * Get classic character profile data with caching.
+     *
+     * @param  string  $region The game region
+     * @param  string  $realmName The realm name
+     * @param  string  $characterName The character name
+     * @return array The character profile data
+     */
+    public function getCharacter(string $region, string $realmName, string $characterName): array
     {
         $realmName = Str::slug($realmName);
         $characterName = mb_strtolower($characterName);
 
-        $responses = $this->profileClient->getCharacterInfo($region, $realmName, $characterName, true);
+        $cacheKey = CacheKeys::characterProfile($characterName, $realmName, $region, true);
+        $cacheTtl = config('blizzard.character_min_seconds_update', 3600);
 
-        return [
-            'name' => $characterName,
-            'realm' => $realmName,
-            'region' => $region,
-            'basic' => $this->mapBasicResponseData($responses['basic']),
-            'media' => $this->mapMediaResponseData($responses['media']),
-            'equipment' => $this->mapEquipmentResponse($responses['equipment']),
-            'specialization' => $this->mapSpecializationResponse($responses['specialization'])
-        ];
+        return Cache::remember($cacheKey, $cacheTtl, function () use ($region, $realmName, $characterName) {
+            $responses = $this->profileClient->getCharacterInfo($region, $realmName, $characterName, true);
+
+            return [
+                'name' => $characterName,
+                'realm' => $realmName,
+                'region' => $region,
+                'basic' => $this->mapBasicResponseData($responses['basic']),
+                'media' => $this->mapMediaResponseData($responses['media']),
+                'equipment' => $this->mapEquipmentResponse($responses['equipment']),
+                'specialization' => $this->mapSpecializationResponse($responses['specialization']),
+            ];
+        });
     }
 
     private function mapSpecializationResponse(Response $response)
@@ -40,14 +57,14 @@ class ClassicCharacterService
 
         // Find active specialization group and spec
         $activeGroup = collect($data->specialization_groups ?? [])
-            ->first(fn($group) => $group->is_active);
+            ->first(fn ($group) => $group->is_active);
 
-        if (!$activeGroup) {
+        if (! $activeGroup) {
             return [
                 'activeSpecialization' => null,
                 'activeSpecLoadoutCode' => '',
                 'classTalents' => [],
-                'specTalents' => []
+                'specTalents' => [],
             ];
         }
 
@@ -57,7 +74,7 @@ class ClassicCharacterService
             'activeSpecialization' => $activeSpec?->specialization_name,
             'activeSpecLoadoutCode' => $data->_links->self->href ?? '',
             'classTalents' => $this->mapClassTalents($activeGroup->specializations ?? [], $activeSpec?->specialization_name ?? ''),
-            'specTalents' => $this->mapSpecTalents($activeSpec?->talents ?? [])
+            'specTalents' => $this->mapSpecTalents($activeSpec?->talents ?? []),
         ];
     }
 
@@ -71,8 +88,8 @@ class ClassicCharacterService
     private function mapClassTalents(array $specializations, string $activeSpecName): array
     {
         return collect($specializations)
-            ->filter(fn($spec) => $spec->specialization_name !== $activeSpecName)
-            ->flatMap(fn($spec) => $this->mapTalents($spec->talents ?? []))
+            ->filter(fn ($spec) => $spec->specialization_name !== $activeSpecName)
+            ->flatMap(fn ($spec) => $this->mapTalents($spec->talents ?? []))
             ->values()
             ->all();
     }
@@ -85,63 +102,19 @@ class ClassicCharacterService
     private function mapTalents(array $talents): array
     {
         return collect($talents)
-            ->map(fn($talent) => [
+            ->map(fn ($talent) => [
                 'id' => $talent->talent->id ?? null,
                 'spellTooltip' => $talent->spell_tooltip->spell->id ?? null,
-                'rank' => $talent->talent_rank ?? null
+                'rank' => $talent->talent_rank ?? null,
             ])
             ->all();
-    }
-
-    private function mapBasicResponseData(Response $response)
-    {
-        $data = json_decode($response->getBody());
-
-        $result = [
-            'gender' => $data->gender->name,
-            'faction' => $data->faction->name,
-            'race' => $data->race->id,
-            'class' => $data->character_class->id,
-            'level' => $data->level,
-            'average_item_level' => $data->average_item_level,
-            'equipped_item_level' => $data->equipped_item_level,
-        ];
-
-        if (isset($data->guild)) {
-            $result['guild'] = [
-                'name' => $data->guild->name,
-                'realm' => $data->guild->realm->name,
-                'faction' => $data->guild->faction->name ?? null
-            ];
-        }
-
-        return $result;
-    }
-
-    private function mapMediaResponseData(Response $response)
-    {
-        $data = json_decode($response->getBody());
-
-        $pictures = [
-            'avatar' => $data->avatar_url ?? null,
-            'inset' => $data->bust_url ?? null,
-            'main' => $data->render_url ?? null
-        ];
-
-        if (isset($data->assets)) {
-            foreach ($data->assets as $asset) {
-                $pictures[$asset->key] = $asset->value;
-            }
-        }
-
-        return $pictures;
     }
 
     private function mapEquipmentResponse(Response $response)
     {
         $data = json_decode($response->getBody());
 
-        return array_map(fn($item) => $this->transformItem($item), $data->equipped_items);
+        return array_map(fn ($item) => $this->transformItem($item), $data->equipped_items);
     }
 
     private function transformItem($item)
@@ -154,21 +127,6 @@ class ClassicCharacterService
             'enchantments' => $this->mapEnchantments($item->enchantments ?? []),
             'runes' => $this->mapRunes($item->enchantments ?? []),
         ];
-    }
-
-    private function mapSetItems($set)
-    {
-        if (!isset($set))
-            return null;
-
-        $equippedSetItems = array_filter($set->items, fn($setItem) => isset($setItem->is_equipped));
-
-        return array_values(array_map(fn($set) => $set->item->id, $equippedSetItems));
-    }
-
-    private function mapEnchantments($enchantments)
-    {
-        return array_map(fn($enchant) => $enchant->enchantment_id, $enchantments);
     }
 
     private function mapRunes($enchantments)

@@ -1,0 +1,11 @@
+{
+    "mcpServers": {
+        "laravel-boost": {
+            "command": "C:\\Users\\User\\.config\\herd\\bin\\php82\\php.exe",
+            "args": [
+                "C:\\Users\\User\\Projects\\wow-armory-lite-be\\artisan",
+                "boost:mcp"
+            ]
+        }
+    }
+}

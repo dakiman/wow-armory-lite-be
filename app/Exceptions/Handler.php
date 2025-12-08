@@ -29,22 +29,54 @@ class Handler extends ExceptionHandler
         'password_confirmation',
     ];
 
-    public function report(Throwable $exception)
+    /**
+     * Report or log an exception.
+     */
+    public function report(Throwable $exception): void
     {
+        if ($exception instanceof ApiException) {
+            \Log::error('API Exception', [
+                'message' => $exception->getMessage(),
+                'status_code' => $exception->getStatusCode(),
+                'previous' => $exception->getPrevious()?->getMessage(),
+                'trace' => $exception->getTraceAsString(),
+            ]);
+        }
+
+        if ($exception instanceof BadResponseException) {
+            \Log::error('External API Error', [
+                'message' => $exception->getMessage(),
+                'response' => $exception->hasResponse() ? (string) $exception->getResponse()->getBody() : null,
+                'status_code' => $exception->hasResponse() ? $exception->getResponse()->getStatusCode() : null,
+            ]);
+        }
+
         parent::report($exception);
     }
 
+    /**
+     * Render an exception into an HTTP response.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Symfony\Component\HttpFoundation\Response
+     */
     public function render($request, Throwable $exception)
     {
-        if($exception instanceof ApiException) {
+        if ($exception instanceof ApiException) {
             return response()->json([
-                'message' => $exception->getMessage() ?? 'Unexpected error occured.',
+                'error' => [
+                    'message' => $exception->getMessage() ?? 'Unexpected error occurred.',
+                    'status_code' => $exception->getStatusCode() ?? 500,
+                ],
             ], $exception->getStatusCode() ?? 500);
         }
 
-        if($exception instanceof BadResponseException) {
+        if ($exception instanceof BadResponseException) {
             return response()->json([
-               'message' => 'There was an error contacting external services'
+                'error' => [
+                    'message' => 'There was an error contacting external services',
+                    'status_code' => 500,
+                ],
             ], 500);
         }
 

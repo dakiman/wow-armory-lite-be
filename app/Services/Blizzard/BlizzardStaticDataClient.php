@@ -3,11 +3,9 @@
 namespace App\Services\Blizzard;
 
 use App\Exceptions\BlizzardServiceException;
+use App\Helpers\BlizzardUrlBuilder;
 use Exception;
 use GuzzleHttp\Client;
-use GuzzleHttp\Exception\GuzzleException;
-use GuzzleHttp\Promise;
-use GuzzleHttp\Utils;
 
 class BlizzardStaticDataClient
 {
@@ -22,24 +20,23 @@ class BlizzardStaticDataClient
     {
         $client = $this->buildClient($region);
 
-//        try {
-            return $client->get("/data/wow/realm/index");
-//        } catch (Exception $e) {
-//            throw new BlizzardServiceException("Couldnt retrieve realms data", $e, 404);
-//        }
+        try {
+            return $client->get('/data/wow/realm/index');
+        } catch (Exception $e) {
+            throw new BlizzardServiceException('Couldnt retrieve realms data', $e, 404);
+        }
     }
 
     private function buildClient(string $region)
     {
         return new Client([
-            'headers' => ['Authorization' => 'Bearer ' . $this->token],
-            'base_uri' => getBlizzardApiUrl($region),
+            'headers' => ['Authorization' => 'Bearer '.$this->token],
+            'base_uri' => BlizzardUrlBuilder::api($region),
             'query' => [
-                'namespace' => 'dynamic-' . $region,
+                'namespace' => 'dynamic-'.$region,
                 'locale' => 'en_GB',
-                'region' => $region
-            ]
+                'region' => $region,
+            ],
         ]);
     }
-
 }

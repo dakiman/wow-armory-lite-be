@@ -2,17 +2,17 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\GetCharacterRequest;
 use App\Services\CharacterService;
 use App\Services\ClassicCharacterService;
 use App\Services\ProgressionService;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 
 class CharacterController extends Controller
 {
-
     private CharacterService $characterService;
+
     private ClassicCharacterService $classicCharacterService;
+
     private ProgressionService $progressionService;
 
     public function __construct(CharacterService $characterService, ProgressionService $dungeonService, ClassicCharacterService $classicCharacterService)
@@ -23,46 +23,55 @@ class CharacterController extends Controller
     }
 
     /**
-     * Display a listing of the resource.
+     * Get character profile information.
+     *
+     * @return \Illuminate\Http\JsonResponse
      */
-    public function character(string $region, string $realm, string $characterName)
+    public function character(GetCharacterRequest $request)
     {
-        $isClassic = request()->query('isClassic', false);
-//        $character = $this->characterService->getCharacter($region, $realm, $characterName);
-        $character = Cache::remember("$characterName-$realm-$region-profile-$isClassic", 3600, function () use ($region, $realm, $characterName, $isClassic) {
-            return $isClassic ?
-                $this->classicCharacterService->getCharacter($region, $realm, $characterName) :
-                $this->characterService->getCharacter($region, $realm, $characterName);
-        });
+        $region = $request->validated()['region'];
+        $realm = $request->validated()['realm'];
+        $characterName = $request->validated()['characterName'];
+        $isClassic = $request->validated()['isClassic'] ?? false;
+
+        $character = $isClassic ?
+            $this->classicCharacterService->getCharacter($region, $realm, $characterName) :
+            $this->characterService->getCharacter($region, $realm, $characterName, $isClassic);
 
         return response()->json([
-            'character' => $character
+            'character' => $character,
         ]);
     }
 
-    public function mythics(string $region, string $realm, string $characterName)
+    /**
+     * Get character mythic keystone progression data.
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function mythics(GetCharacterRequest $request)
     {
-//        $mythicsData = $this->progressionService->getCharacterMythics($region, $realm, $characterName);
+        $region = $request->validated()['region'];
+        $realm = $request->validated()['realm'];
+        $characterName = $request->validated()['characterName'];
 
-        $mythicsData = Cache::remember("$characterName-$realm-$region-mythics", 3600, function () use ($region, $realm, $characterName) {
-            return $this->progressionService->getCharacterMythics($region, $realm, $characterName);
-        });
+        $mythicsData = $this->progressionService->getCharacterMythics($region, $realm, $characterName);
 
-        return response()->json(
-            $mythicsData
-        );
+        return response()->json($mythicsData);
     }
 
-    public function raids(string $region, string $realm, string $characterName)
+    /**
+     * Get character raiding progression data.
+     *
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function raids(GetCharacterRequest $request)
     {
-//        $raidsData = $this->progressionService->getCharacterRaidingInfo($region, $realm, $characterName);
+        $region = $request->validated()['region'];
+        $realm = $request->validated()['realm'];
+        $characterName = $request->validated()['characterName'];
 
-        $raidsData = Cache::remember("$characterName-$realm-$region-raids", 3600, function () use ($region, $realm, $characterName) {
-            return $this->progressionService->getCharacterRaidingInfo($region, $realm, $characterName);
-        });
+        $raidsData = $this->progressionService->getCharacterRaidingInfo($region, $realm, $characterName);
 
-        return response()->json(
-            $raidsData
-        );
+        return response()->json($raidsData);
     }
 }

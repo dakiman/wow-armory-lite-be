@@ -2,16 +2,14 @@
 
 namespace App\Services;
 
-use App\DTO\Guild\GuildBasic;
-use App\DTO\Guild\GuildDocument;
-use App\DTO\Guild\GuildMember;
-use App\Jobs\RetrieveGuildRoster;
-use App\Models\Guild;
+use App\Constants\CacheKeys;
 use App\Services\Blizzard\BlizzardProfileClient;
+use App\Services\Contracts\GuildServiceInterface;
 use GuzzleHttp\Psr7\Response;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
-class GuildService
+class GuildService implements GuildServiceInterface
 {
     private BlizzardProfileClient $profileClient;
 
@@ -20,25 +18,40 @@ class GuildService
         $this->profileClient = $profileClient;
     }
 
-    public function getGuild(string $region, string $realmName, string $guildName)
+    /**
+     * Get guild information with caching.
+     *
+     * @param  string  $region The game region
+     * @param  string  $realmName The realm name
+     * @param  string  $guildName The guild name
+     * @param  bool  $isClassic Whether to fetch classic guild data
+     * @return array The guild data
+     */
+    public function getGuild(string $region, string $realmName, string $guildName, bool $isClassic = false): array
     {
         $realmName = Str::slug($realmName);
         $guildName = Str::slug($guildName);
 
-        $responses = $this->profileClient->getGuildInfo($region, $realmName, $guildName);
+        $cacheKey = CacheKeys::guildProfile($guildName, $realmName, $region);
+        $cacheTtl = config('blizzard.guild_min_seconds_update', 3600);
 
-        $guild = [
-            'name' => $guildName,
-            'realm' => $realmName,
-            'region' => $region,
-            'basic' => $this->mapBasicData($responses['basic']),
-            'roster' => $this->mapRosterData($responses['roster']),
-        ];
+        return Cache::remember($cacheKey, $cacheTtl, function () use ($region, $realmName, $guildName, $isClassic) {
+            $responses = $this->profileClient->getGuildInfo($region, $realmName, $guildName, $isClassic);
 
-        return $guild;
+            return [
+                'name' => $guildName,
+                'realm' => $realmName,
+                'region' => $region,
+                'basic' => $this->mapBasicData($responses['basic']),
+                'roster' => $this->mapRosterData($responses['roster']),
+            ];
+        });
     }
 
-    private function mapBasicData(Response $response)
+    /**
+     * Map basic guild data from API response.
+     */
+    private function mapBasicData(Response $response): array
     {
         $basicData = json_decode($response->getBody());
 
@@ -46,18 +59,21 @@ class GuildService
             'achievement_points' => $basicData->achievement_points,
             'member_count' => $basicData->member_count,
             'created_timestamp' => $basicData->created_timestamp,
-            'faction' => $basicData->faction->name
+            'faction' => $basicData->faction->name,
         ];
     }
 
-    private function mapRosterData(Response $response)
+    /**
+     * Map guild roster data from API response.
+     */
+    private function mapRosterData(Response $response): array
     {
         $roster = json_decode($response->getBody());
 
         return collect($roster->members)->map(function ($member) {
             $character = $member->character;
 
-            $member = [
+            return [
                 'name' => $character->name,
                 'realm' => $character->realm->slug,
                 'level' => $character->level,
@@ -65,8 +81,6 @@ class GuildService
                 'race' => $character->playable_race->id,
                 'rank' => $member->rank,
             ];
-            return $member;
         })->toArray();
     }
-
 }
