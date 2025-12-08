@@ -2,55 +2,121 @@
 
 namespace App\Services;
 
-use App\Constants\CacheKeys;
+use App\Exceptions\RateLimitException;
+use App\Http\Responses\PendingResponse;
+use App\Jobs\FetchCharacterDataJob;
+use App\Models\Character;
 use App\Services\Blizzard\BlizzardProfileClient;
 use App\Services\Contracts\CharacterServiceInterface;
 use App\Services\Traits\MapsCharacterData;
 use GuzzleHttp\Psr7\Response;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 class CharacterService implements CharacterServiceInterface
 {
     use MapsCharacterData;
 
-    private BlizzardProfileClient $profileClient;
-
-    public function __construct(BlizzardProfileClient $profileClient)
-    {
-        $this->profileClient = $profileClient;
+    public function __construct(
+        private BlizzardProfileClient $profileClient
+    ) {
     }
 
     /**
-     * Get character profile data with caching.
+     * Get character profile data.
      *
-     * @param  string  $region The game region
-     * @param  string  $realmName The realm name
-     * @param  string  $characterName The character name
-     * @param  bool  $isClassic Whether to fetch classic character data
-     * @return array The character profile data
+     * Returns character data immediately if available and fresh,
+     * or queues a background job if rate limited.
+     *
+     * @return array<string, mixed>|PendingResponse
      */
-    public function getCharacter(string $region, string $realmName, string $characterName, bool $isClassic = false): array
+    public function getCharacter(string $region, string $realmName, string $characterName, bool $isClassic = false): array|PendingResponse
     {
         $realmName = Str::slug($realmName);
         $characterName = mb_strtolower($characterName);
 
-        $cacheKey = CacheKeys::characterProfile($characterName, $realmName, $region, $isClassic);
-        $cacheTtl = config('blizzard.character_min_seconds_update', 3600);
+        // Find or create the character record
+        $character = Character::findOrCreateByIdentifiers($region, $realmName, $characterName, $isClassic);
 
-        return Cache::remember($cacheKey, $cacheTtl, function () use ($region, $realmName, $characterName, $isClassic) {
-            $responses = $this->profileClient->getCharacterInfo($region, $realmName, $characterName, $isClassic);
+        // Track the search
+        $character->recordSearch();
 
-            return [
-                'name' => $characterName,
-                'realm' => $realmName,
-                'region' => $region,
-                'basic' => $this->mapBasicResponseData($responses['basic'], true),
-                'media' => $this->mapMediaResponseData($responses['media']),
-                'equipment' => $this->mapEquipmentResponseData($responses['equipment']),
-                'specialization' => $this->mapSpecializationsResponseData($responses['specialization']),
-            ];
-        });
+        // If we have fresh data, return it immediately
+        if ($character->hasFreshData()) {
+            return $character->data;
+        }
+
+        // Try to fetch data synchronously
+        try {
+            $data = $this->fetchAndMapData($region, $realmName, $characterName, $isClassic);
+            $character->markAsComplete($data);
+
+            return $data;
+        } catch (RateLimitException $e) {
+            // Rate limited - queue a background job
+            if (! $character->isFetchInProgress()) {
+                $character->markAsPending();
+                FetchCharacterDataJob::dispatch($character);
+            }
+
+            // If we have stale data, return it with a note
+            if ($character->data !== null) {
+                return $character->data;
+            }
+
+            return new PendingResponse(
+                entity: $character,
+                estimatedWait: $e->getRetryAfter() ?? 30
+            );
+        }
+    }
+
+    /**
+     * Get popular characters.
+     *
+     * @return array{most_searched: array, recently_searched: array}
+     */
+    public function getPopular(): array
+    {
+        $limit = config('blizzard.popular_limit', 5);
+
+        return [
+            'most_searched' => Character::mostSearched($limit)
+                ->get()
+                ->map(fn (Character $c) => $c->getSummary())
+                ->toArray(),
+            'recently_searched' => Character::recentlySearched($limit)
+                ->get()
+                ->map(fn (Character $c) => $c->getSummary())
+                ->toArray(),
+        ];
+    }
+
+    /**
+     * Get character by ID for status polling.
+     */
+    public function getCharacterById(int $id): ?Character
+    {
+        return Character::find($id);
+    }
+
+    /**
+     * Fetch and map character data from Blizzard API.
+     *
+     * @return array<string, mixed>
+     */
+    private function fetchAndMapData(string $region, string $realmName, string $characterName, bool $isClassic): array
+    {
+        $responses = $this->profileClient->getCharacterInfo($region, $realmName, $characterName, $isClassic);
+
+        return [
+            'name' => $characterName,
+            'realm' => $realmName,
+            'region' => $region,
+            'basic' => $this->mapBasicResponseData($responses['basic'], true),
+            'media' => $this->mapMediaResponseData($responses['media']),
+            'equipment' => $this->mapEquipmentResponseData($responses['equipment']),
+            'specialization' => $this->mapSpecializationsResponseData($responses['specialization']),
+        ];
     }
 
     /**

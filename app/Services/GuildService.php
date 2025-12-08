@@ -2,50 +2,116 @@
 
 namespace App\Services;
 
-use App\Constants\CacheKeys;
+use App\Exceptions\RateLimitException;
+use App\Http\Responses\PendingResponse;
+use App\Jobs\FetchGuildDataJob;
+use App\Models\Guild;
 use App\Services\Blizzard\BlizzardProfileClient;
 use App\Services\Contracts\GuildServiceInterface;
 use GuzzleHttp\Psr7\Response;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 class GuildService implements GuildServiceInterface
 {
-    private BlizzardProfileClient $profileClient;
-
-    public function __construct(BlizzardProfileClient $profileClient)
-    {
-        $this->profileClient = $profileClient;
+    public function __construct(
+        private BlizzardProfileClient $profileClient
+    ) {
     }
 
     /**
-     * Get guild information with caching.
+     * Get guild information.
      *
-     * @param  string  $region The game region
-     * @param  string  $realmName The realm name
-     * @param  string  $guildName The guild name
-     * @param  bool  $isClassic Whether to fetch classic guild data
-     * @return array The guild data
+     * Returns guild data immediately if available and fresh,
+     * or queues a background job if rate limited.
+     *
+     * @return array<string, mixed>|PendingResponse
      */
-    public function getGuild(string $region, string $realmName, string $guildName, bool $isClassic = false): array
+    public function getGuild(string $region, string $realmName, string $guildName, bool $isClassic = false): array|PendingResponse
     {
         $realmName = Str::slug($realmName);
         $guildName = Str::slug($guildName);
 
-        $cacheKey = CacheKeys::guildProfile($guildName, $realmName, $region);
-        $cacheTtl = config('blizzard.guild_min_seconds_update', 3600);
+        // Find or create the guild record
+        $guild = Guild::findOrCreateByIdentifiers($region, $realmName, $guildName, $isClassic);
 
-        return Cache::remember($cacheKey, $cacheTtl, function () use ($region, $realmName, $guildName, $isClassic) {
-            $responses = $this->profileClient->getGuildInfo($region, $realmName, $guildName, $isClassic);
+        // Track the search
+        $guild->recordSearch();
 
-            return [
-                'name' => $guildName,
-                'realm' => $realmName,
-                'region' => $region,
-                'basic' => $this->mapBasicData($responses['basic']),
-                'roster' => $this->mapRosterData($responses['roster']),
-            ];
-        });
+        // If we have fresh data, return it immediately
+        if ($guild->hasFreshData()) {
+            return $guild->data;
+        }
+
+        // Try to fetch data synchronously
+        try {
+            $data = $this->fetchAndMapData($region, $realmName, $guildName, $isClassic);
+            $guild->markAsComplete($data);
+
+            return $data;
+        } catch (RateLimitException $e) {
+            // Rate limited - queue a background job
+            if (! $guild->isFetchInProgress()) {
+                $guild->markAsPending();
+                FetchGuildDataJob::dispatch($guild);
+            }
+
+            // If we have stale data, return it with a note
+            if ($guild->data !== null) {
+                return $guild->data;
+            }
+
+            return new PendingResponse(
+                entity: $guild,
+                estimatedWait: $e->getRetryAfter() ?? 30
+            );
+        }
+    }
+
+    /**
+     * Get popular guilds.
+     *
+     * @return array{most_searched: array, recently_searched: array}
+     */
+    public function getPopular(): array
+    {
+        $limit = config('blizzard.popular_limit', 5);
+
+        return [
+            'most_searched' => Guild::mostSearched($limit)
+                ->get()
+                ->map(fn (Guild $g) => $g->getSummary())
+                ->toArray(),
+            'recently_searched' => Guild::recentlySearched($limit)
+                ->get()
+                ->map(fn (Guild $g) => $g->getSummary())
+                ->toArray(),
+        ];
+    }
+
+    /**
+     * Get guild by ID for status polling.
+     */
+    public function getGuildById(int $id): ?Guild
+    {
+        return Guild::find($id);
+    }
+
+    /**
+     * Fetch and map guild data from Blizzard API.
+     *
+     * @return array<string, mixed>
+     */
+    private function fetchAndMapData(string $region, string $realmName, string $guildName, bool $isClassic): array
+    {
+        $responses = $this->profileClient->getGuildInfo($region, $realmName, $guildName, $isClassic);
+
+        return [
+            'name' => $guildName,
+            'realm' => $realmName,
+            'region' => $region,
+            'basic' => $this->mapBasicData($responses['basic']),
+            'roster' => $this->mapRosterData($responses['roster']),
+        ];
     }
 
     /**

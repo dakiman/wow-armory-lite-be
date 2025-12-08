@@ -2,6 +2,8 @@
 
 namespace App\Services\Contracts;
 
+use App\Http\Responses\PendingResponse;
+
 interface CharacterServiceInterface
 {
     /**
@@ -11,7 +13,7 @@ interface CharacterServiceInterface
      * @param  string  $realmName The realm name
      * @param  string  $characterName The character name
      * @param  bool  $isClassic Whether to fetch classic character data
-     * @return array The character profile data
+     * @return array<string, mixed>|PendingResponse The character profile data or pending response if rate limited
      */
-    public function getCharacter(string $region, string $realmName, string $characterName, bool $isClassic = false): array;
+    public function getCharacter(string $region, string $realmName, string $characterName, bool $isClassic = false): array|PendingResponse;
 }
